@@ -33,6 +33,7 @@ from management.role.relation_api_dual_write_handler import RelationApiDualWrite
 
 from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
 from api.models import CrossAccountRequest, Tenant
+from management.tenant_service import get_tenant_bootstrap_service
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 

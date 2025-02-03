@@ -15,6 +15,11 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the principal cleaner."""
+from testcontainers.rabbitmq import RabbitMqContainer
+from stompest.sync import Stomp
+from stompest.config import StompConfig
+from stompest.protocol import StompSpec
+
 from functools import partial
 from threading import Event, Thread
 import uuid
@@ -29,7 +34,7 @@ from rest_framework import status
 from management.group.definer import seed_group
 from management.group.model import Group
 from management.policy.model import Policy
-from management.principal.cleaner import LOCK_ID, clean_tenant_principals
+from management.principal.cleaner import LOCK_ID, QUEUE, clean_tenant_principals
 from management.principal.model import Principal
 from management.principal.cleaner import (
     process_principal_events_from_umb,
@@ -1138,3 +1143,27 @@ class PrincipalUMBTestsWithV1TenantBootstrap(IdentityRequest):
         client_mock.ack.assert_called_once()
         self.assertFalse(Tenant.objects.filter(org_id="17685860").exists())
         self.assertFalse(Principal.objects.filter(user_id=self.principal_user_id).exists())
+
+
+@override_settings(V2_BOOTSTRAP_TENANT=True, PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB=True)
+class PrincipalUMBE2EStompTest(PrincipalUMBTests):
+    """Test UMB Stomp protocol interactions."""
+
+    def test_stomp_e2e(self):
+        with RabbitMqContainer("rabbitmq:3.13-management").with_exposed_ports(61613) as rabbitmq:
+            exec_result = rabbitmq.exec(["rabbitmq-plugins", "enable", "rabbitmq_stomp"])
+            print(exec_result)
+
+            host = rabbitmq.get_container_host_ip()
+            port = rabbitmq.get_exposed_port(61613)
+
+            print(f"{host}:{port}")
+
+            client = Stomp(
+                StompConfig(f"tcp://{host}:{port}", version=StompSpec.VERSION_1_2, login="guest", passcode="guest")
+            )
+
+            process_principal_events_from_umb(
+                umb_client=client,
+                host="/",
+            )

@@ -208,7 +208,7 @@ def process_umb_event(frame, umb_client: Stomp, bootstrap_service: TenantBootstr
             return False
 
         try:
-            data_dict = xmltodict.parse(frame.body)
+            data_dict = xmltodict.parse(frame.body, encoding="utf-16")
             canonical_message = data_dict.get("CanonicalMessage")
 
             user = retrieve_user_info(canonical_message)
@@ -235,28 +235,32 @@ def process_umb_event(frame, umb_client: Stomp, bootstrap_service: TenantBootstr
     return True
 
 
-def process_principal_events_from_umb(bootstrap_service: Optional[TenantBootstrapService] = None):
+def process_principal_events_from_umb(
+    bootstrap_service: Optional[TenantBootstrapService] = None,
+    umb_client: Stomp = UMB_CLIENT,
+    host: Optional[str] = None,
+):
     """Process principals events from UMB."""
     logger.info("process_tenant_principal_events: Start processing principal events from umb.")
     bootstrap_service = bootstrap_service or get_tenant_bootstrap_service(OutboxReplicator())
     try:
         # 1.1 or greater is required to support NACK, used when messages fail.
-        UMB_CLIENT.connect(versions=[StompSpec.VERSION_1_1, StompSpec.VERSION_1_2])
+        umb_client.connect(versions=[StompSpec.VERSION_1_1, StompSpec.VERSION_1_2], host=host)
         # We only have one subscription for this connection, so using a static ID header.
-        UMB_CLIENT.subscribe(QUEUE, {StompSpec.ACK_HEADER: StompSpec.ACK_CLIENT_INDIVIDUAL, StompSpec.ID_HEADER: "0"})
+        umb_client.subscribe(QUEUE, {StompSpec.ACK_HEADER: StompSpec.ACK_CLIENT_INDIVIDUAL, StompSpec.ID_HEADER: "0"})
     except StompConnectionError as e:
         # Skip if already connected/subscribed
         if not str(e).startswith(("Already connected", "Already subscribed")):
             raise e
 
     try:
-        while UMB_CLIENT.canRead(15):  # Check if queue is empty, 15 sec timeout
-            frame = UMB_CLIENT.receiveFrame()
+        while umb_client.canRead(15):  # Check if queue is empty, 15 sec timeout
+            frame = umb_client.receiveFrame()
             logger.info("process_tenant_principal_events: Processing frame. info=%s", frame.info())
-            if not process_umb_event(frame, UMB_CLIENT, bootstrap_service):
+            if not process_umb_event(frame, umb_client, bootstrap_service):
                 break
     finally:
-        UMB_CLIENT.disconnect()
+        umb_client.disconnect()
         logger.info("process_tenant_principal_events: Principal event processing finished.")
 
 
